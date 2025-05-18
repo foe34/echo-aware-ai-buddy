@@ -1,3 +1,4 @@
+
 import React, { useRef, useState } from "react";
 import AppNavbar from "@/components/AppNavbar";
 import VoiceAssistantMic from "@/components/VoiceAssistantMic";
@@ -25,7 +26,8 @@ function WaveformAnimation() {
 const Index = () => {
   const [listening, setListening] = useState(false);
   const [messages, setMessages] = useState<{ message: string; type: "user" | "ai" }[]>([]);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [apiKey, setApiKey] = useState<string>('');
+  const recognitionRef = useRef<any>(null);
 
   // For browser compatibility
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -42,10 +44,23 @@ const Index = () => {
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
-        setMessages((msgs) => [...msgs, { message: transcript, type: "user" }]);
+        setMessages((msgs) => [
+          ...msgs,
+          { message: transcript, type: "user" }
+        ]);
         setListening(false);
+
+        // Send to AI after transcription if API key is present
+        if (apiKey) {
+          fetchAIResponse(transcript);
+        } else {
+          setMessages((msgs) => [
+            ...msgs,
+            { message: "Set your OpenAI API key above to get AI responses.", type: "ai" }
+          ]);
+        }
       };
 
       recognition.onend = () => setListening(false);
@@ -60,6 +75,44 @@ const Index = () => {
     }
   };
 
+  const fetchAIResponse = async (text: string) => {
+    setMessages((msgs) => [
+      ...msgs,
+      { message: "Assistant typing…", type: "ai" }
+    ]);
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            { role: "system", content: "You are a helpful AI assistant." },
+            { role: "user", content: text }
+          ],
+          max_tokens: 100,
+          temperature: 0.7
+        })
+      });
+      if (!res.ok) {
+        throw new Error("API error");
+      }
+      const data = await res.json();
+      const answer = data.choices?.[0]?.message?.content?.trim() || "No response.";
+      setMessages((msgs) =>
+        // Replace the last "Assistant typing..." message
+        msgs.slice(0, -1).concat([{ message: answer, type: 'ai' }])
+      );
+    } catch (err) {
+      setMessages((msgs) =>
+        msgs.slice(0, -1).concat([{ message: "Failed to get AI response. Check your API key.", type: 'ai' }])
+      );
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#151E35] flex flex-col">
       <AppNavbar />
@@ -68,6 +121,16 @@ const Index = () => {
           <h1 className="text-white text-2xl md:text-3xl font-semibold text-center mt-12 tracking-wide mb-4">
             HI! HOW CAN I HELP YOU?
           </h1>
+          {/* API key input */}
+          <div className="w-full mb-2">
+            <input
+              type="password"
+              className="w-full rounded-md px-3 py-1 border border-[#2B3759] bg-[#19213A] text-white text-xs"
+              placeholder="Enter your OpenAI API key to enable AI responses"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </div>
           {/* Chat UI */}
           <div className="w-full bg-[#1A2440] rounded-lg p-4 mb-6 min-h-[200px] flex flex-col justify-end">
             {messages.length === 0 ? (
